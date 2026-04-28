@@ -1,0 +1,191 @@
+// Пример реализации минимальной архитектурной схемы для прототипа системы оценки уровня готовности технологий (УГТ)
+// Backend (FastAPI, Python 3.10+): объявление ключевых сущностей и API endpoints
+
+# models.py
+from typing import List, Optional
+from pydantic import BaseModel
+from datetime import date
+
+class Characteristic(BaseModel):
+    name: str
+    value: float
+    unit: str
+
+class Product(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    characteristics: List[Characteristic]
+    industry: str
+    company: str
+
+class UGTScore(BaseModel):
+    product_id: int
+    technology: str
+    score: int
+    score_date: date
+    feature_contributions: dict[str, float]
+
+class UGTRequest(BaseModel):
+    product: Product
+
+class UGTReport(BaseModel):
+    product_id: int
+    product_name: str
+    technology: str
+    ugt_score: int
+    details: str
+
+# main.py
+from fastapi import FastAPI, HTTPException
+from typing import List
+
+app = FastAPI(title="Система оценки уровня готовности технологий (УГТ)")
+
+# In-memory storage (прототип)
+products_db: List[Product] = []
+ugt_scores_db: List[UGTScore] = []
+
+@app.post("/products/", response_model=Product)
+async def add_product(product: Product):
+    products_db.append(product)
+    return product
+
+@app.get("/products/", response_model=List[Product])
+async def list_products():
+    return products_db
+
+@app.get("/products/{product_id}", response_model=Product)
+async def get_product(product_id: int):
+    for p in products_db:
+        if p.id == product_id:
+            return p
+    raise HTTPException(status_code=404, detail="Product not found")
+
+@app.post("/ugt/classify/", response_model=UGTScore)
+async def classify_ugt(request: UGTRequest):
+    # Имитация работы ML-модели (заглушка, интеграция sklearn/xgboost далее)
+    product = request.product
+    score = 5  # Пример: всегда 5 (заглушка)
+    fake_contributions = {c.name: 0.1 for c in product.characteristics}
+    ugt_score = UGTScore(
+        product_id=product.id,
+        technology="DemoTech",
+        score=score,
+        score_date=date.today(),
+        feature_contributions=fake_contributions
+    )
+    ugt_scores_db.append(ugt_score)
+    return ugt_score
+
+@app.get("/ugt/dynamics/{product_id}", response_model=List[UGTScore])
+async def ugt_dynamics(product_id: int):
+    return [r for r in ugt_scores_db if r.product_id == product_id]
+
+@app.get("/ugt/report/{product_id}", response_model=UGTReport)
+async def generate_report(product_id: int):
+    # Пример генерации отчета (заглушка)
+    product = next((p for p in products_db if p.id == product_id), None)
+    ugt = next((r for r in reversed(ugt_scores_db) if r.product_id == product_id), None)
+    if not (product and ugt):
+        raise HTTPException(status_code=404, detail="No data")
+    return UGTReport(
+        product_id=product.id,
+        product_name=product.name,
+        technology=ugt.technology,
+        ugt_score=ugt.score,
+        details="Демо-отчет о технологической готовности"
+    )
+
+# docs: FastAPI автоматически генерирует Swagger/OpenAPI по определению модели данных и эндпоинтов.
+
+///////////////////////////////////////////////////////////
+// Прототип клиентского интерфейса (TypeScript, React 18+)
+///////////////////////////////////////////////////////////
+
+// src/types.ts
+export interface Characteristic {
+  name: string;
+  value: number;
+  unit: string;
+}
+export interface Product {
+  id: number;
+  name: string;
+  description?: string;
+  characteristics: Characteristic[];
+  industry: string;
+  company: string;
+}
+export interface UGTScore {
+  product_id: number;
+  technology: string;
+  score: number;
+  score_date: string;
+  feature_contributions: { [feature: string]: number };
+}
+
+// src/api.ts
+import axios from "axios";
+import { Product, UGTScore } from "./types";
+
+const API_URL = "http://localhost:8000";
+
+export async function fetchProducts(): Promise<Product[]> {
+  const res = await axios.get(`${API_URL}/products/`);
+  return res.data;
+}
+
+export async function createProduct(product: Product): Promise<Product> {
+  const res = await axios.post(`${API_URL}/products/`, product);
+  return res.data;
+}
+
+export async function classifyUGT(product: Product): Promise<UGTScore> {
+  const res = await axios.post(`${API_URL}/ugt/classify/`, { product });
+  return res.data;
+}
+
+// src/components/ProductForm.tsx (упрощено)
+import React from "react";
+import { useForm, SubmitHandler } from "react-hook-form";
+import { Product } from "../types";
+
+type Props = { onSubmit: (data: Product) => void };
+
+export function ProductForm({ onSubmit }: Props) {
+  const { register, handleSubmit } = useForm<Product>();
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input placeholder="ID" {...register("id", { valueAsNumber: true })} />
+      <input placeholder="Название" {...register("name")} />
+      <input placeholder="Отрасль" {...register("industry")} />
+      <input placeholder="Предприятие" {...register("company")} />
+      <button type="submit">Сохранить</button>
+    </form>
+  );
+}
+
+// src/components/UGTResult.tsx
+import React from "react";
+import { UGTScore } from "../types";
+
+export function UGTResult({ score }: { score: UGTScore }) {
+  return (
+    <div>
+      <h2>УГТ: {score.score}</h2>
+      <div>Технология: {score.technology}</div>
+      <ul>
+        {Object.entries(score.feature_contributions).map(([f, v]) => (
+          <li key={f}>
+            {f}: {v}
+          </li>
+        ))}
+      </ul>
+      <div>Дата: {score.score_date}</div>
+    </div>
+  );
+}
+
+// Этот скелет демонстрирует архитектурные принципы: разделение уровней, типизацию, REST API,
+// задел под ML и аналитику (реализация валидации, вычислений, визуализации, отчетов и т.д. расширяется в ходе развития проекта).
